@@ -369,6 +369,11 @@ val write_xml :
 
 (** {2 HTML} *)
 
+val parse_html_ragel :
+  ?report:(location -> Error.t -> unit) ->
+  ?context:[< `Document | `Fragment of string ] ->
+  string -> 's parser
+
 val parse_html :
   ?report:(location -> Error.t -> unit) ->
   ?encoding:Encoding.t ->

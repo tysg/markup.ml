@@ -1377,6 +1377,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
             `Start {name = "svg"} -> false
         | Some {is_html_integration_point = true}, `Start _ -> false
         | Some {is_html_integration_point = true}, `Char _ -> false
+        | Some {is_html_integration_point = true}, `String _ -> false
         | _, `EOF -> false
         | _ -> true
       in
@@ -1389,6 +1390,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   and initial_mode () =
     dispatch tokens begin function
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020) ->
+        initial_mode ()
+
+      | _, `String s when is_whitespace_only s ->
         initial_mode ()
 
       | l, `Comment s ->
@@ -1415,6 +1419,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020) ->
         before_html_mode ()
 
+      | _, `String s when is_whitespace_only s ->
+        before_html_mode ()
+
       | l, `Start ({name = "html"} as t) ->
         push_and_emit l t before_head_mode
 
@@ -1431,6 +1438,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   and before_head_mode () =
     dispatch tokens begin function
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020) ->
+        before_head_mode ()
+
+      | _, `String s when is_whitespace_only s ->
         before_head_mode ()
 
       | l, `Comment s ->
@@ -1465,6 +1475,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   and in_head_mode_rules mode = function
     | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
       add_character l c;
+      mode ()
+    
+    | l, `String s when is_whitespace_only s ->
+      add_string l s;
       mode ()
 
     | l, `Comment s ->
@@ -1538,6 +1552,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | l, `End {name = "noscript"} ->
         pop l in_head_mode
 
+      | _, `String s as v when is_whitespace_only s ->
+        in_head_mode_rules in_head_noscript_mode v
+
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020)
       | _, `Comment _
       | _, `Start {name =
@@ -1562,6 +1579,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens begin function
       | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
         add_character l c;
+        after_head_mode ()
+
+      | l, `String s when is_whitespace_only s ->
+        add_string l s; 
         after_head_mode ()
 
       | l, `Comment s ->
@@ -2076,6 +2097,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
         add_character l c;
         text_mode original_mode
 
+      | l, `String s ->
+        add_string l s;
+        text_mode original_mode
+
       | l, `EOF as v ->
         report l (`Unexpected_eoi "content") !throw (fun () ->
         push tokens v;
@@ -2107,6 +2132,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens (fun v -> in_table_mode_rules in_table_mode v)
 
   and in_table_mode_rules mode = function
+  (* TODO: Char/String in table not handled *)
     | _, `Char _ as v
         when Stack.current_element_is open_elements
                ["table"; "tbody"; "tfoot"; "thead"; "tr"] ->
@@ -2260,6 +2286,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens begin function
       | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
         add_character l c;
+        in_column_group_mode ()
+      
+      | l, `String s when is_whitespace_only s ->
+        add_string l s; 
         in_column_group_mode ()
 
       | l, `Comment s ->
@@ -2456,6 +2486,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       add_character l c;
       mode ()
 
+    | l, `String s ->
+      add_string l s;
+      mode ()
+
     | l, `Comment s ->
       emit l (`Comment s) mode
 
@@ -2559,7 +2593,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
 
   (* 8.2.5.4.18. *)
   and in_template_mode_rules mode = function
-    | _, (`Char _ | `Comment _ | `Doctype _) as v ->
+    | _, (`Char _ | `Comment _ | `Doctype _ | `String _) as v ->
       in_body_mode_rules "template" mode v
 
     | _, `Start {name =
@@ -2617,6 +2651,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens begin function
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020) as v ->
         in_body_mode_rules "html" after_body_mode v
+      
+      | (_, `String s) as v when is_whitespace_only s ->
+        in_body_mode_rules "html" after_body_mode v
 
       | l, `Comment s ->
         emit l (`Comment s) after_body_mode
@@ -2645,6 +2682,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens begin function
       | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
         add_character l c;
+        in_frameset_mode ()
+      
+      | l, `String s when is_whitespace_only s ->
+        add_string l s; 
         in_frameset_mode ()
 
       | l, `Comment s ->
@@ -2695,6 +2736,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
         add_character l c;
         after_frameset_mode ()
+      
+      | l, `String s when is_whitespace_only s ->
+        add_string l s; 
+        after_frameset_mode ()
 
       | l, `Comment s ->
         emit l (`Comment s) after_frameset_mode
@@ -2730,6 +2775,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | _, `Start {name = "html"} as v ->
         in_body_mode_rules "html" after_after_body_mode v
 
+      | _, `String s as v when is_whitespace_only s ->
+        in_body_mode_rules "html" after_after_body_mode v
+
       | l, `EOF ->
         emit_end l
 
@@ -2747,6 +2795,9 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | _, `Doctype _
       | _, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020)
       | _, `Start {name = "html"} as v ->
+        in_body_mode_rules "html" after_after_frameset_mode v
+
+      | _, `String s as v when is_whitespace_only s ->
         in_body_mode_rules "html" after_after_frameset_mode v
 
       | l, `EOF ->
@@ -2787,6 +2838,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     | l, `String s ->
       add_string l s;
       if not @@ is_whitespace_only s then frameset_ok := false;
+      mode ()
 
     | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
       add_character l c;

@@ -115,6 +115,11 @@ struct
     |> Xml_writer.write report prefix
     |> Utility.strings_to_bytes
 
+  let parse_html_ragel report context source =
+    let tokens = Html_tokenizer.Ragel.tokenize source in
+    let signals = Html_parser.parse context report (tokens, ignore, ignore) in
+    stream_to_parser signals
+
   let parse_html report ?encoding context source =
     let with_encoding (encoding : Encoding.t) k =
       source
@@ -283,6 +288,13 @@ struct
       source =
 
     Cps.parse_html (wrap_report report) ?encoding context source
+
+  let parse_html_ragel
+      ?(report = fun _ _ -> IO.return ())
+      ?context
+      source =
+
+    Cps.parse_html_ragel (wrap_report report) context source
 
   let write_html ?escape_attribute ?escape_text signals =
     Cps.write_html ?escape_attribute ?escape_text signals
