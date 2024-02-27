@@ -175,6 +175,8 @@ struct
     let rec scan () =
       next_token begin function
         | _, `Doctype _ -> k `Document
+        | _, `String s when not @@ is_whitespace_only s -> k (`Fragment "body")
+        | _, `String _ -> scan ()
         | _, `Char c when not @@ is_whitespace c -> k (`Fragment "body")
         | _, `Char _ -> scan ()
         | _, `EOF -> k (`Fragment "body")
@@ -1036,6 +1038,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   let form_element_pointer = ref None in
 
   let add_character = Text.add text in
+  let add_string = Text.add_string text in
 
   set_foreign (fun () ->
     Stack.current_element_is_foreign context open_elements);
@@ -1616,6 +1619,12 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   and in_body_mode_rules context_name mode = function
     | l, `Char 0 ->
       report l (`Bad_token ("U+0000", "body", "null")) !throw mode
+
+    | l, `String s -> 
+      reconstruct_active_formatting_elements (fun () ->
+      add_string l s;
+      if not @@ is_whitespace_only s then frameset_ok := false;
+      mode ())
 
     | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
       reconstruct_active_formatting_elements (fun () ->
@@ -2774,6 +2783,10 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
         (fun () ->
       add_character l u_rep;
       mode ())
+
+    | l, `String s ->
+      add_string l s;
+      if not @@ is_whitespace_only s then frameset_ok := false;
 
     | l, `Char (0x0009 | 0x000A | 0x000C | 0x000D | 0x0020 as c) ->
       add_character l c;
