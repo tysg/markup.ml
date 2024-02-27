@@ -18,7 +18,8 @@ let suite =
     Test_html_writer.tests;
     Test_detect.tests;
     Test_utility.tests;
-    Test_integration.tests
+    Test_integration.tests;
+    Test_ragel.tests
   ]
 
 let () =

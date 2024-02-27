@@ -20,3 +20,8 @@ val tokenize :
     (location * token) Kstream.t *
     (state -> unit) *
     ((unit -> bool) -> unit)
+
+
+module Ragel : sig
+  val tokenize : string -> (location * token) Kstream.t 
+end

@@ -1758,3 +1758,12 @@ let tokenize report (input, get_location) =
   let set_foreign = (:=) foreign in
 
   stream, set_state, set_foreign
+
+module Ragel = struct
+  let tokenize html = 
+    let ctx = Ragel_tokenizer.init () in
+    let tokens = ref [] in
+    let call token = tokens := (token :: !tokens) in
+    let () = Ragel_tokenizer.parse ~ctx call html in
+    Kstream.of_list (List.rev !tokens)
+end
