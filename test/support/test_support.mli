@@ -4,7 +4,6 @@
 open Markup__Common
 
 val wrong_k : string -> _ cont
-
 val with_text_limit : int -> (unit -> unit) -> unit
 
 val expect_error :
@@ -12,7 +11,7 @@ val expect_error :
   location ->
   Markup.Error.t ->
   (Markup__Error.parse_handler -> unit) ->
-    unit
+  unit
 
 type 'a general_signal = S of 'a | E of Markup.Error.t
 
@@ -21,11 +20,20 @@ val expect_signals :
   ('a -> string) ->
   string ->
   (int * int * 'a general_signal) list ->
-    Markup__Error.parse_handler * ((location * 'a) -> unit cps) *
-      (unit -> unit)
+  Markup__Error.parse_handler * (location * 'a -> unit cps) * (unit -> unit)
+
+val expect_no_location_signals :
+  ?prefix:bool ->
+  (([> `Comment of 'b | `Doctype of 'c ] as 'a) -> string) ->
+  string ->
+  (int * int * 'a general_signal) list ->
+  (int * int -> Markup__Error.t -> (exn -> unit) -> (unit -> 'd) -> 'd)
+  * ((int * int) * 'a -> (exn -> unit) -> (unit -> 'e) -> 'e)
+  * (unit -> unit)
 
 val expect_strings :
-  string -> string general_signal list ->
-    Markup__Error.write_handler * (string -> unit cps) * (unit -> unit)
+  string ->
+  string general_signal list ->
+  Markup__Error.write_handler * (string -> unit cps) * (unit -> unit)
 
 val iter : ('a -> unit cps) -> 'a Markup__Kstream.t -> unit

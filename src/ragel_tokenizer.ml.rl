@@ -97,6 +97,8 @@ let parse ?(ctx=init ()) call data =
     call ((get_lnum ctx, !mark_end), element)
   in
   %%write exec;
+
+  call `EOF;
 (* FIXME ? *)
 (*     if !eof <> -1 && !cs < htmlstream_first_final then Exn.fail "not parsed"; *)
   ()

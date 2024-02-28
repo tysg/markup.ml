@@ -8,20 +8,26 @@ module Error = Markup__Error
 module Kstream = Markup__Kstream
 
 let sprintf = Printf.sprintf
-
-let wrong_k message = fun _ -> assert_failure message
+let wrong_k message _ = assert_failure message
 
 let with_text_limit n f =
   let limit = !Text.length_limit in
   Text.length_limit := n;
 
-  try f (); Text.length_limit := limit
-  with exn -> Text.length_limit := limit; raise exn
+  try
+    f ();
+    Text.length_limit := limit
+  with exn ->
+    Text.length_limit := limit;
+    raise exn
 
 let expect_error :
-  ?allow_recovery:int -> location -> Error.t -> (Error.parse_handler -> unit) ->
-    unit
-    = fun ?(allow_recovery = 0) l error f ->
+    ?allow_recovery:int ->
+    location ->
+    Error.t ->
+    (Error.parse_handler -> unit) ->
+    unit =
+ fun ?(allow_recovery = 0) l error f ->
   let errors = ref 0 in
   let report l' error' _ k =
     errors := !errors + 1;
@@ -45,7 +51,7 @@ let expect_error :
     sprintf "no error\nexpected \"%s\"" (Error.to_string ~location:l error)
     |> assert_failure
 
-let expect_sequence ?(prefix = false) id to_string sequence =
+let expect_sequence ?(prefix = false) ?(cmp = ( = )) id to_string sequence =
   let assert_failure s = assert_failure (id ^ "\n" ^ s) in
 
   let sequence = ref sequence in
@@ -56,24 +62,19 @@ let expect_sequence ?(prefix = false) id to_string sequence =
     else
       match !sequence with
       | [] ->
-        if not prefix then begin
-          invalid := true;
-          sprintf "got \"%s\"\nexpected no more output" (to_string s)
-          |> assert_failure
-        end
+          if not prefix then (
+            invalid := true;
+            sprintf "got \"%s\"\nexpected no more output" (to_string s)
+            |> assert_failure)
+      | first :: rest -> (
+          if cmp s first then sequence := rest
+          else (
+            invalid := true;
+            sprintf "got \"%s\"\nexpected \"%s\"" (to_string s)
+              (to_string first)
+            |> assert_failure);
 
-      | first::rest ->
-        if s = first then
-          sequence := rest
-        else begin
-          invalid := true;
-          sprintf "got \"%s\"\nexpected \"%s\"" (to_string s) (to_string first)
-          |> assert_failure
-        end;
-
-        match rest, prefix with
-        | [], true -> throw Exit
-        | _ -> ()
+          match (rest, prefix) with [], true -> throw Exit | _ -> ())
   in
 
   let ended () =
@@ -81,18 +82,14 @@ let expect_sequence ?(prefix = false) id to_string sequence =
     else
       match !sequence with
       | [] -> ()
-      | first::_ ->
-        sprintf "got end\nexpected \"%s\"" (to_string first)
-        |> assert_failure
+      | first :: _ ->
+          sprintf "got end\nexpected \"%s\"" (to_string first) |> assert_failure
   in
 
-  receive, ended
+  (receive, ended)
 
 let iter iterate s =
-  Kstream.iter iterate s (function
-    | Exit -> ()
-    | exn -> raise exn)
-    ignore
+  Kstream.iter iterate s (function Exit -> () | exn -> raise exn) ignore
 
 type 'a general_signal = S of 'a | E of Error.t
 
@@ -104,20 +101,56 @@ let expect_signals ?prefix signal_to_string id signals =
 
   let receive, ended = expect_sequence ?prefix id to_string signals in
 
-  let report (l, c) e throw k = receive (l, c, E e) throw; k () in
-  let signal ((l, c), s) throw k = receive (l, c, S s) throw; k () in
+  let report (l, c) e throw k =
+    receive (l, c, E e) throw;
+    k ()
+  in
+  let signal ((l, c), s) throw k =
+    receive (l, c, S s) throw;
+    k ()
+  in
 
-  report, signal, ended
+  (report, signal, ended)
+
+let expect_no_location_signals ?prefix signal_to_string id signals =
+  let signals =
+    List.filter
+      (function _, _, S (`Doctype _ | `Comment _) -> false | _ -> true)
+      signals
+  in
+
+  let to_string = function
+    | l, c, S s -> sprintf "line %i, column %i: %s" l c (signal_to_string s)
+    | l, c, E e -> sprintf "line %i, column %i: %s" l c (Error.to_string e)
+  in
+
+  let cmp (_, _, l) (_, _, r) = l = r in
+
+  let receive, ended = expect_sequence ?prefix ~cmp id to_string signals in
+
+  let report (l, c) e throw k =
+    receive (l, c, E e) throw;
+    k ()
+  in
+  let signal ((l, c), s) throw k =
+    receive (l, c, S s) throw;
+    k ()
+  in
+
+  (report, signal, ended)
 
 let expect_strings id strings =
-  let to_string = function
-    | S s -> s
-    | E e -> Error.to_string e
-  in
+  let to_string = function S s -> s | E e -> Error.to_string e in
 
   let receive, ended = expect_sequence id to_string strings in
 
-  let report _ e throw k = receive (E e) throw; k () in
-  let string s throw k = receive (S s) throw; k () in
+  let report _ e throw k =
+    receive (E e) throw;
+    k ()
+  in
+  let string s throw k =
+    receive (S s) throw;
+    k ()
+  in
 
-  report, string, ended
+  (report, string, ended)

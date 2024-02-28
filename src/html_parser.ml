@@ -2132,8 +2132,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     dispatch tokens (fun v -> in_table_mode_rules in_table_mode v)
 
   and in_table_mode_rules mode = function
-  (* TODO: Char/String in table not handled *)
-    | _, `Char _ as v
+    | (_, `Char _| _, `String _) as v
         when Stack.current_element_is open_elements
                ["table"; "tbody"; "tfoot"; "thead"; "tr"] ->
       push tokens v;
@@ -2218,6 +2217,12 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
         in_table_text_mode only_space (v::cs) mode
 
       | _, `Char _ as v ->
+        in_table_text_mode false (v::cs) mode
+      
+      | (_, `String s as v) when is_whitespace_only s ->
+        in_table_text_mode only_space (v::cs) mode
+
+      | _, `String _ as v ->
         in_table_text_mode false (v::cs) mode
 
       | v ->
