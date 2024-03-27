@@ -592,7 +592,7 @@ struct
   let insert_below (open_elements, _) ~anchor ~new_ =
     let rec insert prefix = function
       | [] -> List.rev prefix
-      | e::more when e == anchor -> (List.rev prefix) @ (new_::e::more)
+      | e::more when e == anchor -> List.rev_append prefix @@ new_::e::more
       | e::more -> insert (e::prefix) more
     in
     open_elements := insert [] !open_elements
@@ -663,7 +663,7 @@ struct
       | [] -> List.rev prefix
       | (Element_ (e, l, t) as v)::more when e == anchor ->
         let new_entry = Element_ (new_, l, t) in
-        (List.rev prefix) @ (v::new_entry::more)
+        List.rev_append prefix (v::new_entry::more)
       | v::more -> insert (v::prefix) more
     in
     active_formatting_elements := insert [] !active_formatting_elements
@@ -852,7 +852,7 @@ struct
       let entry, filtered_children =
         let rec remove prefix = function
           | (_, Element e as entry)::rest when e == node ->
-            entry, (List.rev prefix) @ rest
+            entry, List.rev_append prefix rest
           | e::rest -> remove (e::prefix) rest
           | [] -> (node.location, Element node), old_parent.children
         in
