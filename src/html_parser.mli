@@ -4,6 +4,7 @@
 open Common
 
 val parse :
+  ?depth_limit:int ->
   [< `Document | `Fragment of string ] option ->
   Error.parse_handler ->
   (location * Html_tokenizer.token) Kstream.t *

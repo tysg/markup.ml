@@ -115,13 +115,13 @@ struct
     |> Xml_writer.write report prefix
     |> Utility.strings_to_bytes
 
-  let parse_html report ?encoding context source =
+  let parse_html report ?depth_limit ?encoding context source =
     let with_encoding (encoding : Encoding.t) k =
       source
       |> encoding ~report
       |> Input.preprocess Common.is_valid_html_char report
       |> Html_tokenizer.tokenize report
-      |> Html_parser.parse context report
+      |> Html_parser.parse ?depth_limit context report
       |> k
     in
 
@@ -205,6 +205,7 @@ sig
     ?report:(location -> Error.t -> unit io) ->
     ?encoding:Encoding.t ->
     ?context:[< `Document | `Fragment of string ] ->
+    ?depth_limit:int ->
     (char, _) stream -> async parser
 
   val write_html :
@@ -280,9 +281,10 @@ struct
       ?(report = fun _ _ -> IO.return ())
       ?encoding
       ?context
+      ?depth_limit
       source =
 
-    Cps.parse_html (wrap_report report) ?encoding context source
+    Cps.parse_html (wrap_report report) ?depth_limit ?encoding context source
 
   let write_html ?escape_attribute ?escape_text signals =
     Cps.write_html ?escape_attribute ?escape_text signals
