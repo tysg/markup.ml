@@ -793,12 +793,14 @@ struct
         subtree_buffer.enabled <- true
 
   let disable subtree_buffer =
-    let rec traverse acc = function
+    let (_, depth_limit) = subtree_buffer.open_elements in
+    let rec traverse depth acc = function
+      | _ when depth = 0 -> failwith "Subtree.disable: depth limit reached"
       | l, Element {element_name; attributes; end_location; children} ->
         let name = Ns.to_string (fst element_name), snd element_name in
         let start_signal = l, `Start_element (name, attributes) in
         let end_signal = end_location, `End_element in
-        start_signal::(List.fold_left traverse (end_signal::acc) children)
+        start_signal::(List.fold_left (traverse (depth-1)) (end_signal::acc) children)
 
       | l, Text ss ->
         begin match acc with
@@ -811,7 +813,7 @@ struct
     in
 
     let result =
-      List.fold_left traverse []
+      List.fold_left (traverse depth_limit) []
         (Stack.require_current_element subtree_buffer.open_elements).children
     in
 
