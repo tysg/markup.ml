@@ -435,9 +435,10 @@ end
 (* Stack of open elements. *)
 module Stack :
 sig
-  type t = element list ref
+  type t = (element list ref * int)
 
-  val create : unit -> t
+  val create : ?limit:int -> unit -> t
+  val elements : t -> element list ref
 
   val current_element : t -> element option
   val require_current_element : t -> element
@@ -461,51 +462,55 @@ sig
   val insert_below : t -> anchor:element -> new_:element -> unit
 end =
 struct
-  type t = element list ref
+  type t = (element list ref * int)
+  (** The Adoption Agency algorithm sometimes push too many elements when trying to recover
+      from malformed HTMLs. Most of the time such HTML *)
 
-  let create () = ref []
+  let create ?(limit=Int.max_int) () = (ref [], limit)
+  let elements (el, _) = el
 
-  let current_element open_elements =
+  let current_element (open_elements, _) =
     match !open_elements with
     | [] -> None
     | element::_ -> Some element
 
-  let require_current_element open_elements =
-    match current_element open_elements with
+  let require_current_element t =
+    match current_element t with
     | None -> failwith "require_current_element: None"
     | Some element -> element
 
-  let adjusted_current_element context open_elements =
+  let adjusted_current_element context (open_elements, _) =
     match !open_elements, Context.element context with
     | [_], Some element -> Some element
     | [], _ -> None
     | element::_, _ -> Some element
 
-  let current_element_is open_elements names =
+  let current_element_is (open_elements, _) names =
     match !open_elements with
     | {element_name = `HTML, name}::_ -> list_mem_string name names
     | _ -> false
 
-  let current_element_is_foreign context open_elements =
-    match adjusted_current_element context open_elements with
+  let current_element_is_foreign context t =
+    match adjusted_current_element context t with
     | Some {element_name = ns, _} when ns <> `HTML -> true
     | _ -> false
 
-  let has open_elements name =
+  let has (open_elements, _) name =
     List.exists
       (fun {element_name = ns, name'} ->
         ns = `HTML && name' = name) !open_elements
 
-  let in_scope_general scope_delimiters open_elements name' =
-    let rec scan = function
+  let in_scope_general scope_delimiters (open_elements, depth_limit) name' =
+    let rec scan depth = function
       | [] -> false
+      | _ when depth = 0 -> failwith "in_scope_general: depth limit reached"
       | {element_name = ns, name'' as name}::more ->
         if ns = `HTML && name'' = name' then true
         else
           if list_mem_qname name scope_delimiters then false
-          else scan more
+          else scan (depth-1) more
     in
-    scan !open_elements
+    scan depth_limit !open_elements
 
   let scope_delimiters =
     [`HTML, "applet"; `HTML, "caption"; `HTML, "html";
@@ -525,67 +530,71 @@ struct
   let in_table_scope =
     in_scope_general [`HTML, "html"; `HTML, "table"; `HTML, "template"]
 
-  let in_select_scope open_elements name =
-    let rec scan = function
+  let in_select_scope (open_elements, depth_limit) name =
+    let rec scan depth = function
       | [] -> false
+      | _ when depth = 0 -> failwith "in_select_scope: depth limit reached"
       | {element_name = ns, name'}::more ->
         if ns <> `HTML then false
         else
           if name' = name then true
           else
-            if name' = "optgroup" || name' = "option" then scan more
+            if name' = "optgroup" || name' = "option" then scan (depth-1) more
             else false
     in
-    scan !open_elements
+    scan depth_limit !open_elements
 
-  let one_in_scope open_elements names =
-    let rec scan = function
+  let one_in_scope (open_elements, depth_limit) names =
+    let rec scan depth = function
       | [] -> false
+      | _ when depth = 0 -> failwith "one_in_scope: depth limit reached"
       | {element_name = ns, name' as name}::more ->
         if ns = `HTML && list_mem_string name' names then true
         else
           if list_mem_qname name scope_delimiters then false
-          else scan more
+          else scan (depth-1) more
     in
-    scan !open_elements
+    scan depth_limit !open_elements
 
-  let one_in_table_scope open_elements names =
-    let rec scan = function
+  let one_in_table_scope (open_elements, depth_limit) names =
+    let rec scan depth = function
       | [] -> false
+      | _ when depth = 0 -> failwith "one_in_table_scope: depth limit reached"
       | {element_name = ns, name' as name}::more ->
         if ns = `HTML && list_mem_string name' names then true
         else
           if list_mem_qname name
               [`HTML, "html"; `HTML, "table"; `HTML, "template"] then
             false
-          else scan more
+          else scan (depth-1) more
     in
-    scan !open_elements
+    scan depth_limit !open_elements
 
-  let target_in_scope open_elements node =
-    let rec scan = function
+  let target_in_scope (open_elements, depth_limit) node =
+    let rec scan depth = function
       | [] -> false
+      | _ when depth = 0 -> failwith "target_in_scope: depth limit reached"
       | e::more ->
         if e == node then true
         else
           if list_mem_qname node.element_name scope_delimiters then false
-          else scan more
+          else scan (depth-1) more
     in
-    scan !open_elements
+    scan depth_limit !open_elements
 
-  let remove open_elements element =
+  let remove (open_elements, _) element =
     open_elements := List.filter ((!=) element) !open_elements;
     element.is_open <- false
 
-  let replace open_elements ~old ~new_ =
+  let replace (open_elements, _) ~old ~new_ =
     open_elements :=
       List.map (fun e ->
         if e == old then (e.is_open <- false; new_) else e) !open_elements
 
-  let insert_below open_elements ~anchor ~new_ =
+  let insert_below (open_elements, _) ~anchor ~new_ =
     let rec insert prefix = function
       | [] -> List.rev prefix
-      | e::more when e == anchor -> (List.rev prefix) @ (new_::e::more)
+      | e::more when e == anchor -> List.rev_append prefix @@ new_::e::more
       | e::more -> insert (e::prefix) more
     in
     open_elements := insert [] !open_elements
@@ -656,7 +665,7 @@ struct
       | [] -> List.rev prefix
       | (Element_ (e, l, t) as v)::more when e == anchor ->
         let new_entry = Element_ (new_, l, t) in
-        (List.rev prefix) @ (v::new_entry::more)
+        List.rev_append prefix (v::new_entry::more)
       | v::more -> insert (v::prefix) more
     in
     active_formatting_elements := insert [] !active_formatting_elements
@@ -786,12 +795,14 @@ struct
         subtree_buffer.enabled <- true
 
   let disable subtree_buffer =
-    let rec traverse acc = function
+    let (_, depth_limit) = subtree_buffer.open_elements in
+    let rec traverse depth acc = function
+      | _ when depth = 0 -> failwith "Subtree.disable: depth limit reached"
       | l, Element {element_name; attributes; end_location; children} ->
         let name = Ns.to_string (fst element_name), snd element_name in
         let start_signal = l, `Start_element (name, attributes) in
         let end_signal = end_location, `End_element in
-        start_signal::(List.fold_left traverse (end_signal::acc) children)
+        start_signal::(List.fold_left (traverse (depth-1)) (end_signal::acc) children)
 
       | l, Text ss ->
         begin match acc with
@@ -804,7 +815,7 @@ struct
     in
 
     let result =
-      List.fold_left traverse []
+      List.fold_left (traverse depth_limit) []
         (Stack.require_current_element subtree_buffer.open_elements).children
     in
 
@@ -816,7 +827,7 @@ struct
   let adoption_agency_algorithm
       subtree_buffer active_formatting_elements l subject =
 
-    let open_elements = subtree_buffer.open_elements in
+    let (open_elements, _) as stack = subtree_buffer.open_elements in
 
     let above_removed_nodes = ref [] in
 
@@ -836,7 +847,7 @@ struct
     let remove_node node =
       above_removed_nodes :=
         (node, above_in_stack node !open_elements)::!above_removed_nodes;
-      Stack.remove open_elements node
+      Stack.remove stack node
     in
 
     let reparent node new_parent =
@@ -845,7 +856,7 @@ struct
       let entry, filtered_children =
         let rec remove prefix = function
           | (_, Element e as entry)::rest when e == node ->
-            entry, (List.rev prefix) @ rest
+            entry, List.rev_append prefix rest
           | e::rest -> remove (e::prefix) rest
           | [] -> (node.location, Element node), old_parent.children
         in
@@ -877,7 +888,7 @@ struct
 
             node.end_location <- l;
 
-            Stack.replace open_elements ~old:node ~new_:new_node;
+            Stack.replace stack ~old:node ~new_:new_node;
             Active.replace active_formatting_elements ~old:node ~new_:new_node;
 
             reparent last_node new_node;
@@ -923,7 +934,7 @@ struct
           if e != formatting_element then pop ()
       in
       pop ();
-      subtree_buffer.position <- Stack.require_current_element open_elements
+      subtree_buffer.position <- Stack.require_current_element stack
     in
 
     let rec outer_loop outer_loop_counter errors =
@@ -939,13 +950,13 @@ struct
             true, List.rev ((l, `Unmatched_end_tag subject)::errors)
           end
           else begin
-            if not @@ Stack.target_in_scope open_elements
+            if not @@ Stack.target_in_scope stack
                         formatting_element then begin
               true, List.rev ((l, `Unmatched_end_tag subject)::errors)
             end
             else begin
               let errors =
-                if Stack.require_current_element open_elements ==
+                if Stack.require_current_element stack ==
                    formatting_element then
                   errors
                 else (l, `Unmatched_end_tag subject)::errors
@@ -991,9 +1002,9 @@ struct
                     active_formatting_elements ~anchor:node ~new_:new_node
                 end;
 
-                Stack.remove open_elements formatting_element;
+                Stack.remove stack formatting_element;
                 Stack.insert_below
-                  open_elements ~anchor:furthest_block ~new_:new_node;
+                  stack ~anchor:furthest_block ~new_:new_node;
 
                 outer_loop outer_loop_counter errors
             end
@@ -1001,12 +1012,12 @@ struct
       end
     in
 
-    let current_node = Stack.require_current_element open_elements in
+    let current_node = Stack.require_current_element stack in
     if current_node.element_name = (`HTML, subject) then begin
       open_elements := List.tl !open_elements;
       current_node.is_open <- false;
       current_node.end_location <- l;
-      subtree_buffer.position <- Stack.require_current_element open_elements;
+      subtree_buffer.position <- Stack.require_current_element stack;
       Active.remove active_formatting_elements current_node;
       true, []
     end
@@ -1015,7 +1026,7 @@ end
 
 
 
-let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
+let parse ?depth_limit requested_context report (tokens, set_tokenizer_state, set_foreign) =
   let context = Context.uninitialized () in
 
   let throw = ref (fun _ -> ()) in
@@ -1028,7 +1039,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
   let misnested_tag l t context_name k =
     report l (`Misnested_tag (t.name, context_name, t.Token_tag.attributes)) !throw k in
 
-  let open_elements = Stack.create () in
+  let open_elements = Stack.create ?limit:depth_limit () in
   let active_formatting_elements = Active.create () in
   let subtree_buffer = Subtree.create open_elements in
   let text = Text.prepare () in
@@ -1051,7 +1062,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
           location (fun () -> `Unmatched_start_tag name) !throw (fun () ->
         iterate more)
     in
-    iterate !open_elements
+    iterate !(Stack.elements open_elements)
   in
 
   let rec current_mode = ref initial_mode
@@ -1077,7 +1088,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     | `Fragment _ ->
       let notional_root =
         Element.create ~suppress:true (`HTML, "html") (1, 1) in
-      open_elements := [notional_root]
+      (Stack.elements open_elements) := [notional_root]
     end;
 
     begin match Context.the_context context with
@@ -1150,7 +1161,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       | _::rest -> iterate last rest
       | [] -> in_body_mode
     in
-    iterate false !open_elements
+    iterate false !(Stack.elements open_elements)
 
   and emit' l s m =
     if Subtree.accumulate subtree_buffer l s then begin
@@ -1204,7 +1215,8 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
     let element_entry =
       Element.create ~is_html_integration_point (namespace, name) location
     in
-    open_elements := element_entry::!open_elements;
+    let elements_ref = Stack.elements open_elements in
+    elements_ref := element_entry::!elements_ref;
 
     if set_form_element_pointer then
       form_element_pointer := Some element_entry;
@@ -1222,7 +1234,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
       {Token_tag.name = name; attributes = []; self_closing = false} mode
 
   and pop location mode =
-    match !open_elements with
+    match !(Stack.elements open_elements) with
     | [] -> mode ()
     | element::more ->
       emit_text (fun () ->
@@ -1230,14 +1242,14 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
         if not element.buffering then k ()
         else emit_list (Subtree.disable subtree_buffer) k)
       (fun () ->
-        open_elements := more;
+        (Stack.elements open_elements) := more;
         element.is_open <- false;
         if element.suppress then mode ()
         else emit' location `End_element mode))
 
   and pop_until condition location mode =
     let rec iterate () =
-      match !open_elements with
+      match !(Stack.elements open_elements) with
       | [] -> mode ()
       | element::_ ->
         if condition element then mode ()
@@ -1253,7 +1265,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
 
   and pop_until_and_raise_errors names location mode =
     let rec iterate () =
-      match !open_elements with
+      match !(Stack.elements open_elements) with
       | [] -> mode ()
       | {element_name = ns, name}::_ ->
         if ns = `HTML && list_mem_string name names then pop location mode
@@ -1333,7 +1345,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
           else
             scan more
     in
-    scan !open_elements
+    scan !(Stack.elements open_elements)
 
   and emit_end l =
     pop_until (fun _ -> false) l (fun () ->
@@ -1678,7 +1690,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
 
     | l, `Start ({name = "frameset"} as t) ->
       misnested_tag l t context_name (fun () ->
-      match !open_elements with
+      match !(Stack.elements open_elements) with
       | [_] -> mode ()
       | _ ->
         let rec second_is_body = function
@@ -1686,14 +1698,14 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
           | [] -> false
           | _::more -> second_is_body more
         in
-        if not @@ second_is_body !open_elements then mode ()
+        if not @@ second_is_body !(Stack.elements open_elements) then mode ()
         else
           if not !frameset_ok then mode ()
           else
             (* There is a deviation here due to the nature of the parser: if a
                body element has been emitted, it can't be suppressed. *)
             pop_until
-              (fun _ -> match !open_elements with [_] -> true | _ -> false)
+              (fun _ -> match !(Stack.elements open_elements) with [_] -> true | _ -> false)
               l (fun () ->
             push_and_emit l t in_frameset_mode))
 
@@ -2064,7 +2076,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
             report l (`Unmatched_end_tag name) !throw mode
           else close rest
     in
-    close !open_elements
+    close !(Stack.elements open_elements)
 
   (* Part of 8.2.5.4.7. *)
   and adoption_agency_algorithm l name mode =
@@ -2521,7 +2533,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
 
     | l, `End {name = "optgroup"} ->
       (fun mode' ->
-        match !open_elements with
+        match !(Stack.elements open_elements) with
         | {element_name = `HTML, "option"}::
             {element_name = `HTML, "optgroup"}::_ ->
           pop l mode'
@@ -2907,7 +2919,7 @@ let parse requested_context report (tokens, set_tokenizer_state, set_foreign) =
           | {element_name = `HTML, _}::_ -> force_html ()
           | _::rest -> scan rest
         in
-        scan !open_elements)
+        scan !(Stack.elements open_elements))
 
     | _, `EOF -> force_html ()
 

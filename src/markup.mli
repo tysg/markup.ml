@@ -378,6 +378,7 @@ val parse_html :
   ?report:(location -> Error.t -> unit) ->
   ?encoding:Encoding.t ->
   ?context:[< `Document | `Fragment of string ] ->
+  ?depth_limit:int ->
   (char, 's) stream -> 's parser
 (** Similar to {!parse_xml}, but parses HTML with embedded SVG and MathML, never
     emits signals [`Xml] or [`PI], and [~context] has a different type on tag
@@ -848,6 +849,7 @@ sig
     ?report:(location -> Error.t -> unit io) ->
     ?encoding:Encoding.t ->
     ?context:[< `Document | `Fragment of string ] ->
+    ?depth_limit:int ->
     (char, _) stream -> async parser
 
   val write_html :
