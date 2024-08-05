@@ -1529,10 +1529,57 @@ let tokenize report (input, get_location) =
   (stream, set_state, set_foreign)
 
 module Ragel = struct
+  open Devkit
+  module HS = HtmlStream
+
+  let decode raw =
+    let inner = HS.Raw.project raw in
+    try Web.htmldecode inner with _ -> inner
+
   let tokenize html =
-    let ctx = Ragel_tokenizer.init () in
+    let ctx = HS.init () in
     let tokens = ref [] in
-    let call token = tokens := token :: !tokens in
-    let () = Ragel_tokenizer.parse ~ctx call html in
+    let tuck_with_location ~ctx token =
+      tuck tokens ((HS.get_lnum ctx, -1), token)
+    in
+    let call = function
+      | HS.Text raw -> tuck_with_location ~ctx (`String (decode raw))
+      | Tag (name, attrs) ->
+          tuck_with_location ~ctx
+            (`Start
+              {
+                name;
+                attributes = List.rev_map (fun (k, v) -> (k, decode v)) attrs;
+                (* TODO: HS calls close tag immediately after open tag if tag is self closing; check if don't distinguish it changes anything *)
+                self_closing = false;
+              })
+      | Close name ->
+          tuck_with_location ~ctx
+            (`End { name; attributes = []; self_closing = false })
+      | Script (attrs, inner) ->
+          (* TODO: see if can remove these *)
+          tuck_with_location ~ctx
+            (`Start
+              {
+                name = "script";
+                attributes = List.rev_map (fun (k, v) -> (k, decode v)) attrs;
+                self_closing = false;
+              });
+          tuck_with_location ~ctx
+            (`End { name = "script"; attributes = []; self_closing = false })
+      | Style (attrs, inner) ->
+          tuck_with_location ~ctx
+            (`Start
+              {
+                name = "style";
+                attributes = List.rev_map (fun (k, v) -> (k, decode v)) attrs;
+                self_closing = false;
+              });
+          tuck_with_location ~ctx
+            (`End { name = "style"; attributes = []; self_closing = false })
+    in
+
+    let () = HS.parse ~ctx call html in
+    tuck_with_location ~ctx `EOF;
     Kstream.of_list (List.rev !tokens)
 end

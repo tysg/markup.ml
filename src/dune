@@ -4,12 +4,7 @@
  (synopsis "Error-recovering functional HTML5 and XML parsers")
  (instrumentation
   (backend bisect_ppx))
- (libraries uutf)
+ (libraries devkit uutf)
  (flags
   (:standard -w -9)))
 
-(rule
- (targets ragel_tokenizer.ml)
- (deps ragel_tokenizer.ml.rl)
- (action
-  (run %{bin:ragel} -O -F1 %{deps} -o %{targets})))

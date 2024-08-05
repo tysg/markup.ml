@@ -103,11 +103,6 @@ module Cps = struct
     let signals = Html_parser.parse context report (tokens, ignore, ignore) in
     stream_to_parser signals
 
-  let parse_html_ragel report context source =
-    let tokens = Html_tokenizer.Ragel.tokenize source in
-    let signals = Html_parser.parse context report (tokens, ignore, ignore) in
-    stream_to_parser signals
-
   let parse_html report ?depth_limit ?encoding context source =
     let with_encoding (encoding : Encoding.t) k =
       source |> encoding ~report
@@ -247,7 +242,8 @@ module Asynchronous (IO : IO) = struct
       signals =
     Cps.write_xml (wrap_report report) prefix signals
 
-  let parse_html ?(report = fun _ _ -> IO.return ()) ?encoding ?context source =
+  let parse_html ?(report = fun _ _ -> IO.return ()) ?encoding ?context
+      ?depth_limit source =
     Cps.parse_html (wrap_report report) ?depth_limit ?encoding context source
 
   let parse_html_ragel ?(report = fun _ _ -> IO.return ()) ?context source =
