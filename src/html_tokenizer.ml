@@ -1553,6 +1553,10 @@ module Ragel = struct
                 (* TODO: HS calls close tag immediately after open tag if tag is self closing; check if don't distinguish it changes anything *)
                 self_closing = false;
               })
+      | Close "br" ->
+        (* given <br/>, HS genrates Tag ("br", ..) and Close "br",
+        but on the latter parser will detect unmatched end tag and insert opening, causing double <br> *)
+        ()
       | Close name ->
           tuck_with_location ~ctx
             (`End { name; attributes = []; self_closing = false })
@@ -1565,6 +1569,7 @@ module Ragel = struct
                 attributes = List.rev_map (fun (k, v) -> (k, decode v)) attrs;
                 self_closing = false;
               });
+          tuck_with_location ~ctx (`String (inner));
           tuck_with_location ~ctx
             (`End { name = "script"; attributes = []; self_closing = false })
       | Style (attrs, inner) ->
@@ -1575,6 +1580,7 @@ module Ragel = struct
                 attributes = List.rev_map (fun (k, v) -> (k, decode v)) attrs;
                 self_closing = false;
               });
+          tuck_with_location ~ctx (`String (inner));
           tuck_with_location ~ctx
             (`End { name = "style"; attributes = []; self_closing = false })
     in
