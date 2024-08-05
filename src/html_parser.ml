@@ -1762,8 +1762,11 @@ let parse ?depth_limit requested_context report (tokens, set_tokenizer_state, se
       frameset_ok := false;
       close_current_p_element l (fun () ->
       push_and_emit l t (fun () ->
+      (* https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element *)
+      (* In the HTML syntax, a leading newline character immediately following the pre element start tag is stripped. *)
       next_expected tokens !throw (function
         | _, `Char 0x000A -> mode ()
+        | loc, `String s when String.starts_with ~prefix:"\n" s -> push tokens (loc, `String (String.sub s 1 (String.length s - 1))); mode ()
         | v ->
           push tokens v;
           mode ())))
@@ -1977,6 +1980,7 @@ let parse ?depth_limit requested_context report (tokens, set_tokenizer_state, se
       set_tokenizer_state `RCDATA;
       next_expected tokens !throw (function
         | _, `Char 0x000A -> text_mode mode
+        | loc, `String s when String.starts_with ~prefix:"\n" s -> push tokens (loc, `String (String.sub s 1 (String.length s - 1))); text_mode mode
         | v ->
           push tokens v;
           text_mode mode))
