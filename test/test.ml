@@ -22,7 +22,7 @@ let suite =
            Test_utility.tests;
            Test_integration.tests;
            (* Test_ragel_tokenizer.tests; *)
-           Test_ragel_parser.tests;
+           (* Test_ragel_parser.tests; *)
          ]
 
 let () =

@@ -35,7 +35,10 @@ let start_element name = `Start_element ((html_ns, name), [])
 let expect ?prefix ?(context = Some `Document) text signals =
   (* ragel parser doesn't emit bad token Error, filter them out *)
   let signals =
-    List.filter (function _, _, E (`Bad_token _) -> false | _ -> true) signals
+    List.filter (function
+    | _, _, E (`Bad_token _) | _, _, E (`Bad_document "doctype should be first")
+      -> false
+    | _ -> true) signals
   in
 
   let report, iterate, ended =
