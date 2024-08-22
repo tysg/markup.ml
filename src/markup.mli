@@ -375,6 +375,13 @@ val parse_html_ragel :
   ?depth_limit:int ->
   string -> 's parser
 
+val parse_html_proc :
+  ?report:(location -> Error.t -> unit) ->
+  ?context:[< `Document | `Fragment of string ] ->
+  ?depth_limit:int ->
+  ctx:Devkit.HtmlStream.ctx ->
+  unit -> ((Devkit.HtmlStream.elem -> unit) * (unit -> 's parser))
+
 val parse_html :
   ?report:(location -> Error.t -> unit) ->
   ?encoding:Encoding.t ->

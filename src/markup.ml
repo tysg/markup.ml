@@ -103,6 +103,14 @@ module Cps = struct
     let signals = Html_parser.parse ?depth_limit context report (tokens, ignore, ignore) in
     stream_to_parser signals
 
+  let parse_html_proc ~ctx ?depth_limit report context =
+    let (step, fin) = Html_tokenizer.Ragel.proc ~ctx in
+    let fin () =
+      let tokens = fin () in
+      let signals = Html_parser.parse ?depth_limit context report (tokens, ignore, ignore) in stream_to_parser signals
+    in
+    (step, fin)
+
   let parse_html report ?depth_limit ?encoding context source =
     let with_encoding (encoding : Encoding.t) k =
       source |> encoding ~report
@@ -119,7 +127,6 @@ module Cps = struct
           Detect.select_html source throw (fun encoding ->
               with_encoding encoding k)
     in
-
     Kstream.construct constructor |> stream_to_parser
 
   let write_html ?escape_attribute ?escape_text signals =
@@ -248,6 +255,10 @@ module Asynchronous (IO : IO) = struct
 
   let parse_html_ragel ?(report = fun _ _ -> IO.return ()) ?context ?depth_limit source =
     Cps.parse_html_ragel ?depth_limit (wrap_report report) context source
+
+  (* callback into [TagStream.scan_ragel] *)
+  let parse_html_proc ?(report = fun _ _ -> IO.return ()) ?context ?depth_limit ~ctx () =
+    Cps.parse_html_proc ?depth_limit ~ctx (wrap_report report) context
 
   let write_html ?escape_attribute ?escape_text signals =
     Cps.write_html ?escape_attribute ?escape_text signals

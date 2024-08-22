@@ -23,5 +23,10 @@ val tokenize :
 
 
 module Ragel : sig
-  val tokenize : string -> (location * token) Kstream.t 
+  val proc :
+    ctx:Devkit.HtmlStream.ctx ->
+    ((Devkit.HtmlStream.elem -> unit) *
+      (unit -> (location * token) Kstream.t))
+
+  val tokenize : string -> (location * token) Kstream.t
 end

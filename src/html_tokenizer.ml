@@ -1536,13 +1536,12 @@ module Ragel = struct
     let inner = HS.Raw.project raw in
     try Web.htmldecode inner with _ -> inner
 
-  let tokenize html =
-    let ctx = HS.init () in
+  let proc ~ctx =
     let tokens = ref [] in
     let tuck_with_location ~ctx token =
       tuck tokens ((HS.get_lnum ctx, -1), token)
     in
-    let call = function
+    let step = function
       | HS.Text raw -> tuck_with_location ~ctx (`String (decode raw))
       | Tag (name, attrs) ->
           tuck_with_location ~ctx
@@ -1584,8 +1583,15 @@ module Ragel = struct
           tuck_with_location ~ctx
             (`End { name = "style"; attributes = []; self_closing = false })
     in
+    let fin () =
+      tuck_with_location ~ctx `EOF;
+      Kstream.of_list (List.rev !tokens)
+  in
+  (step, fin)
 
-    let () = HS.parse ~ctx call html in
-    tuck_with_location ~ctx `EOF;
-    Kstream.of_list (List.rev !tokens)
+  let tokenize html =
+    let ctx = HS.init () in
+    let (step, fin) = proc ~ctx in
+    let () = HS.parse ~ctx step html in
+    fin ()
 end
