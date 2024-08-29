@@ -98,18 +98,12 @@ module Cps = struct
   let write_xml report prefix signals =
     signals |> Xml_writer.write report prefix |> Utility.strings_to_bytes
 
-  let parse_html_ragel ?depth_limit report context source =
-    let tokens = Html_tokenizer.Ragel.tokenize source in
-    let signals = Html_parser.parse ?depth_limit context report (tokens, ignore, ignore) in
-    stream_to_parser signals
-
-  let parse_html_proc ~ctx ?depth_limit report context =
-    let (step, fin) = Html_tokenizer.Ragel.proc ~ctx in
-    let fin () =
-      let tokens = fin () in
-      let signals = Html_parser.parse ?depth_limit context report (tokens, ignore, ignore) in stream_to_parser signals
+  let parse_tokens ?depth_limit report context tokens =
+    let tokens = Kstream.of_list tokens in
+    let signals =
+      Html_parser.parse ?depth_limit context report (tokens, ignore, ignore)
     in
-    (step, fin)
+    stream_to_parser signals
 
   let parse_html report ?depth_limit ?encoding context source =
     let with_encoding (encoding : Encoding.t) k =
@@ -253,12 +247,10 @@ module Asynchronous (IO : IO) = struct
       ?depth_limit source =
     Cps.parse_html (wrap_report report) ?depth_limit ?encoding context source
 
-  let parse_html_ragel ?(report = fun _ _ -> IO.return ()) ?context ?depth_limit source =
-    Cps.parse_html_ragel ?depth_limit (wrap_report report) context source
-
   (* callback into [TagStream.scan_ragel] *)
-  let parse_html_proc ?(report = fun _ _ -> IO.return ()) ?context ?depth_limit ~ctx () =
-    Cps.parse_html_proc ?depth_limit ~ctx (wrap_report report) context
+  let parse_tokens ?(report = fun _ _ -> IO.return ()) ?context ?depth_limit
+      tokens =
+    Cps.parse_tokens ?depth_limit (wrap_report report) context tokens
 
   let write_html ?escape_attribute ?escape_text signals =
     Cps.write_html ?escape_attribute ?escape_text signals
@@ -304,3 +296,12 @@ module Asynchronous (IO : IO) = struct
 end
 
 include Asynchronous (Synchronous)
+
+module Internals = struct
+  include Common
+  module Token_tag = Common.Token_tag
+
+  type token = Html_tokenizer.token
+
+  let parse_tokens = parse_tokens
+end
